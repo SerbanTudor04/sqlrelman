@@ -1,9 +1,11 @@
 package ro.serbantudor04.sqlrelman.cli.commands;
 
 import ro.serbantudor04.sqlrelman.cli.annotations.Command;
+import ro.serbantudor04.sqlrelman.cli.annotations.ConfigProperty;
+import ro.serbantudor04.sqlrelman.config.AppConfig;
 import ro.serbantudor04.sqlrelman.config.ConfigManager;
 
-import java.io.File;
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Scanner;
 
@@ -13,62 +15,58 @@ public class SetupCommand extends BaseCommand {
     @Override
     public void run(List<String> args) {
         Scanner scanner = new Scanner(System.in);
-        ConfigManager config = ConfigManager.getInstance();
+        AppConfig config = AppConfig.getInstance();
+        ConfigManager manager = ConfigManager.getInstance();
+
+        // Ensure config has the latest file values before prompting
+        manager.bind(config);
 
         System.out.println("=========================================");
-        System.out.println("          SQLRelMan Interactive Setup    ");
+        System.out.println("          Dynamic Interactive Setup      ");
         System.out.println("=========================================");
+        System.out.println("Press [Enter] to keep the current value.");
+        System.out.println();
 
-        // --- Setting: Release Directory ---
-        String currentReleaseDir = config.getProperty("release.dir", "Not set");
-        System.out.println("Current release directory: " + currentReleaseDir);
-        System.out.print("Enter new release directory (or press Enter to keep current): ");
+        Field[] fields = config.getClass().getDeclaredFields();
 
-        String newReleaseDir = scanner.nextLine().trim();
+        for (Field field : fields) {
+            if (!field.isAnnotationPresent(ConfigProperty.class)) continue;
 
-        if (!newReleaseDir.isEmpty()) {
-            File dir = new File(newReleaseDir);
+            ConfigProperty annotation = field.getAnnotation(ConfigProperty.class);
+            field.setAccessible(true);
 
-            if (!dir.exists()) {
-                System.out.print("Directory does not exist. Create it now? (y/n): ");
-                String createDir = scanner.nextLine().trim().toLowerCase();
-
-                if (createDir.equals("y") || createDir.equals("yes")) {
-                    if (dir.mkdirs()) {
-                        System.out.println("Directory created.");
-                        config.setProperty("release.dir", dir.getAbsolutePath());
-                    } else {
-                        System.out.println("Failed to create directory. Configuration not saved.");
-                    }
+            try {
+                String currentValue = (String) field.get(config);
+                if (currentValue == null || currentValue.isEmpty()) {
+                    currentValue = annotation.defaultValue();
                 }
-            } else if (!dir.isDirectory()) {
-                System.out.println("Path exists but is not a directory. Configuration not saved.");
-            } else {
-                config.setProperty("release.dir", dir.getAbsolutePath());
+
+                System.out.println("--- " + annotation.description() + " ---");
+                System.out.println("Current: " + currentValue);
+                System.out.print("New value: ");
+
+                String input = scanner.nextLine().trim();
+
+                if (!input.isEmpty()) {
+                    field.set(config, input);
+                }
+                System.out.println();
+
+            } catch (IllegalAccessException e) {
+                System.err.println("Error accessing configuration field: " + field.getName());
             }
         }
 
-        // --- Setting: Example for Database URL (You can uncomment or modify later) ---
-        /*
-        String currentDbUrl = config.getProperty("db.url", "Not set");
-        System.out.println("\nCurrent database URL: " + currentDbUrl);
-        System.out.print("Enter new database URL (or press Enter to keep current): ");
-        String newDbUrl = scanner.nextLine().trim();
-        if (!newDbUrl.isEmpty()) {
-            config.setProperty("db.url", newDbUrl);
-        }
-        */
-
-        // Save all the updated properties to the file
-        config.saveConfig();
+        // Save the dynamically updated object back to the properties file
+        manager.save(config);
 
         System.out.println("=========================================");
-        System.out.println("Setup complete! Configuration saved.");
+        System.out.println("Setup complete! All configurations saved.");
     }
 
     @Override
     public String getHelp() {
-        return "Runs an interactive setup wizard to configure the application's properties (e.g., release directory).";
+        return "Runs a dynamically generated interactive setup wizard for app properties.";
     }
 
     @Override
