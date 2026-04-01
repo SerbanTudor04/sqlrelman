@@ -16,11 +16,11 @@ public class AppConfig {
     private AppConfig() {}
 
     @ConfigProperty(
-            key = "release.dir",
+            key = "releases.dir",
             description = "The directory where new SQL release files are generated",
             defaultValue = "./releases"
     )
-    public String releaseDirectory;
+    public String releasesDirectory;
 
     @ConfigProperty(
             key = "db.driver",
