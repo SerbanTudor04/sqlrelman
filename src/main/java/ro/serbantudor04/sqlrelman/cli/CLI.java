@@ -6,16 +6,11 @@ import ro.serbantudor04.sqlrelman.cli.util.ClassScanner;
 import ro.serbantudor04.sqlrelman.config.AppConfig;
 import ro.serbantudor04.sqlrelman.config.ConfigManager;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class CLI {
 
     private final List<String> args;
-    // Maps the command name (e.g., "help") to its instance
     private final Map<String, BaseCommand> commandRegistry;
     private static CLI instance;
 
@@ -29,17 +24,10 @@ public class CLI {
     private CLI() {
         this.args = new ArrayList<>();
         this.commandRegistry = new HashMap<>();
-
-        // 1. Initialize and bind the configuration first
         initConfig();
-
-        // 2. Load the commands dynamically
         loadCommandsDynamic();
     }
 
-    /**
-     * Binds the properties from the config file to the AppConfig instance.
-     */
     private void initConfig() {
         ConfigManager.getInstance().bind(AppConfig.getInstance());
     }
@@ -49,20 +37,20 @@ public class CLI {
     }
 
     public void run() {
-        if (args.isEmpty()) {
-            System.out.println("No command provided.");
-            printHelp();
+        // No args or explicit interactive flag → drop into the shell
+        if (args.isEmpty()
+                || args.contains("--interactive")
+                || args.contains("-i")) {
+            new InteractiveShell(this).start();
             return;
         }
 
-        // Extract the main command (e.g., "help", "connect")
         String commandName = args.get(0).toLowerCase();
-
-        // Extract the rest of the arguments to pass to the command
-        List<String> commandArgs = args.size() > 1 ? args.subList(1, args.size()) : new ArrayList<>();
+        List<String> commandArgs = args.size() > 1
+                ? args.subList(1, args.size())
+                : new ArrayList<>();
 
         BaseCommand command = commandRegistry.get(commandName);
-
         if (command != null) {
             command.run(commandArgs);
         } else {
@@ -71,7 +59,11 @@ public class CLI {
         }
     }
 
-    // Expose loaded commands so HelpCommand can read them
+    /** Used by InteractiveShell to dispatch commands by name. */
+    public BaseCommand findCommand(String name) {
+        return commandRegistry.get(name.toLowerCase());
+    }
+
     public Collection<BaseCommand> getLoadedCommands() {
         return commandRegistry.values();
     }
@@ -81,27 +73,23 @@ public class CLI {
         if (helpCmd != null) {
             helpCmd.run(new ArrayList<>());
         } else {
-            System.out.println("Help command not found. Available commands: " + commandRegistry.keySet());
+            System.out.println("Available commands: " + commandRegistry.keySet());
         }
     }
 
-    /**
-     * Dynamically loads classes annotated with @Command using our custom ClassScanner.
-     */
     private void loadCommandsDynamic() {
         String basePackage = "ro.serbantudor04.sqlrelman.cli.commands";
         List<Class<?>> commandClasses = ClassScanner.getClassesWithAnnotation(basePackage, Command.class);
 
         for (Class<?> clazz : commandClasses) {
             try {
-                // Ensure it extends BaseCommand before casting
                 if (BaseCommand.class.isAssignableFrom(clazz)) {
                     BaseCommand cmd = (BaseCommand) clazz.getDeclaredConstructor().newInstance();
-                    cmd.setCli(this); // Inject the CLI context
+                    cmd.setCli(this);
                     commandRegistry.put(cmd.getName().toLowerCase(), cmd);
                 }
             } catch (Exception e) {
-                System.err.println("Failed to instantiate command class: " + clazz.getName());
+                System.err.println("Failed to instantiate command: " + clazz.getName());
                 e.printStackTrace();
             }
         }
