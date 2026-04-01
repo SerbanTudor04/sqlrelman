@@ -23,16 +23,30 @@ public class AppConfig {
     public String releaseDirectory;
 
     @ConfigProperty(
-            key = "db.url",
-            description = "The database connection URL",
-            defaultValue = "jdbc:mysql://localhost:3306/relman"
+            key = "db.driver",
+            description = "JDBC Driver class (e.g., com.mysql.cj.jdbc.Driver, org.postgresql.Driver)",
+            defaultValue = ""
     )
-    public String databaseUrl;
+    public String dbDriver;
 
     @ConfigProperty(
-            key = "author.name",
-            description = "The default author name to embed in generated SQL scripts",
-            defaultValue = "Unknown"
+            key = "db.url",
+            description = "JDBC URL (e.g., jdbc:mysql://localhost:3306/mydb)",
+            defaultValue = ""
     )
-    public String authorName;
+    public String dbUrl;
+
+    @ConfigProperty(
+            key = "db.user",
+            description = "Database Username",
+            defaultValue = ""
+    )
+    public String dbUser;
+
+    @ConfigProperty(
+            key = "db.password",
+            description = "Database Password",
+            defaultValue = ""
+    )
+    public String dbPassword;
 }

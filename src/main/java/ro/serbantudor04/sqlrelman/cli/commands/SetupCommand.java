@@ -4,8 +4,10 @@ import ro.serbantudor04.sqlrelman.cli.annotations.Command;
 import ro.serbantudor04.sqlrelman.cli.annotations.ConfigProperty;
 import ro.serbantudor04.sqlrelman.config.AppConfig;
 import ro.serbantudor04.sqlrelman.config.ConfigManager;
+import ro.serbantudor04.sqlrelman.engine.DatabaseManager;
 
 import java.lang.reflect.Field;
+import java.sql.Connection;
 import java.util.List;
 import java.util.Scanner;
 
@@ -18,14 +20,12 @@ public class SetupCommand extends BaseCommand {
         AppConfig config = AppConfig.getInstance();
         ConfigManager manager = ConfigManager.getInstance();
 
-        // Ensure config has the latest file values before prompting
         manager.bind(config);
 
         System.out.println("=========================================");
-        System.out.println("          Dynamic Interactive Setup      ");
+        System.out.println("          SQLRelMan Setup Wizard         ");
         System.out.println("=========================================");
         System.out.println("Press [Enter] to keep the current value.");
-        System.out.println();
 
         Field[] fields = config.getClass().getDeclaredFields();
 
@@ -41,7 +41,7 @@ public class SetupCommand extends BaseCommand {
                     currentValue = annotation.defaultValue();
                 }
 
-                System.out.println("--- " + annotation.description() + " ---");
+                System.out.println("\n--- " + annotation.description() + " ---");
                 System.out.println("Current: " + currentValue);
                 System.out.print("New value: ");
 
@@ -50,57 +50,40 @@ public class SetupCommand extends BaseCommand {
                 if (!input.isEmpty()) {
                     field.set(config, input);
                 }
-                System.out.println();
 
             } catch (IllegalAccessException e) {
                 System.err.println("Error accessing configuration field: " + field.getName());
             }
         }
 
-        // Save the dynamically updated object back to the properties file
         manager.save(config);
+        System.out.println("\nConfiguration saved.");
+
+        System.out.println("Testing database connection...");
+        try (Connection conn = DatabaseManager.getConnection()) {
+            System.out.println("SUCCESS: Connected to the database!");
+        } catch (Exception e) {
+            System.err.println("WARNING: Database connection failed. Please check your settings.");
+            System.err.println("Reason: " + e.getMessage());
+        }
 
         System.out.println("=========================================");
-        System.out.println("Setup complete! All configurations saved.");
     }
 
     @Override
-    public String getHelp() {
-        return "Runs a dynamically generated interactive setup wizard for app properties.";
-    }
-
+    public String getHelp() { return "Interactive setup for database and release properties."; }
     @Override
-    public String getName() {
-        return "setup";
-    }
-
+    public String getName() { return "setup"; }
     @Override
-    public String getUsage() {
-        return "setup";
-    }
-
+    public String getUsage() { return "setup"; }
     @Override
-    public String getDescription() {
-        return "Interactive configuration setup.";
-    }
-
+    public String getDescription() { return "Configure the application."; }
     @Override
-    public String getVersion() {
-        return "1.0";
-    }
-
+    public String getVersion() { return "1.0"; }
     @Override
-    public String getAuthor() {
-        return "Serban Tudor";
-    }
-
+    public String getAuthor() { return "Serban Tudor"; }
     @Override
-    public String getDate() {
-        return "2026-03-31";
-    }
-
+    public String getDate() { return "2026-03-31"; }
     @Override
-    public String getLicense() {
-        return "MIT";
-    }
+    public String getLicense() { return "MIT"; }
 }

@@ -3,6 +3,8 @@ package ro.serbantudor04.sqlrelman.cli;
 import ro.serbantudor04.sqlrelman.cli.annotations.Command;
 import ro.serbantudor04.sqlrelman.cli.commands.BaseCommand;
 import ro.serbantudor04.sqlrelman.cli.util.ClassScanner;
+import ro.serbantudor04.sqlrelman.config.AppConfig;
+import ro.serbantudor04.sqlrelman.config.ConfigManager;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,7 +29,19 @@ public class CLI {
     private CLI() {
         this.args = new ArrayList<>();
         this.commandRegistry = new HashMap<>();
+
+        // 1. Initialize and bind the configuration first
+        initConfig();
+
+        // 2. Load the commands dynamically
         loadCommandsDynamic();
+    }
+
+    /**
+     * Binds the properties from the config file to the AppConfig instance.
+     */
+    private void initConfig() {
+        ConfigManager.getInstance().bind(AppConfig.getInstance());
     }
 
     public void parseArgs(String[] args) {
