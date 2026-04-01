@@ -1,0 +1,371 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # triggers on tags like v1.0.0, v2.1.3, etc.
+
+permissions:
+  contents: write  # needed to create GitHub releases and upload assets
+
+jobs:
+
+  # ──────────────────────────────────────────────────────────────
+  # 1. Build the fat JAR once (Java is cross-platform)
+  # ──────────────────────────────────────────────────────────────
+  build:
+    name: Build fat JAR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build fat JAR
+        run: ./gradlew fatJar --no-daemon
+
+      - name: Upload fat JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fat-jar
+          path: build/libs/sqlrelman-*.jar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────────────────────
+  # 2. Package for Linux (.tar.gz + .zip)
+  # ──────────────────────────────────────────────────────────────
+  package-linux:
+    name: Package — Linux
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download fat JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: fat-jar
+          path: dist/
+
+      - name: Resolve version
+        id: ver
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble Linux package
+        run: |
+          PKG="sqlrelman-${{ steps.ver.outputs.VERSION }}-linux"
+          mkdir -p "pkg/$PKG/bin"
+
+          cp dist/sqlrelman-*.jar "pkg/$PKG/sqlrelman.jar"
+
+          # Wrapper shell script
+          cat > "pkg/$PKG/bin/sqlrelman" <<'EOF'
+          #!/usr/bin/env sh
+          SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          exec java \
+            --enable-native-access=ALL-UNNAMED \
+            -Djline.log.level=OFF \
+            -Dorg.jline.terminal.jna=false \
+            -jar "$SCRIPT_DIR/sqlrelman.jar" "$@"
+          EOF
+          chmod +x "pkg/$PKG/bin/sqlrelman"
+
+          # Install helper script
+          cat > "pkg/$PKG/install.sh" <<'EOF'
+          #!/usr/bin/env sh
+          set -e
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          INSTALL_DIR="${1:-$HOME/.local}"
+          mkdir -p "$INSTALL_DIR/lib/sqlrelman" "$INSTALL_DIR/bin"
+          cp "$SCRIPT_DIR/sqlrelman.jar" "$INSTALL_DIR/lib/sqlrelman/sqlrelman.jar"
+          cat > "$INSTALL_DIR/bin/sqlrelman" <<WRAPPER
+          #!/usr/bin/env sh
+          exec java --enable-native-access=ALL-UNNAMED -Djline.log.level=OFF -Dorg.jline.terminal.jna=false -jar "$INSTALL_DIR/lib/sqlrelman/sqlrelman.jar" "\$@"
+          WRAPPER
+          chmod +x "$INSTALL_DIR/bin/sqlrelman"
+          echo "Installed sqlrelman to $INSTALL_DIR/bin/sqlrelman"
+          echo "Make sure $INSTALL_DIR/bin is on your PATH."
+          EOF
+          chmod +x "pkg/$PKG/install.sh"
+
+          # Uninstall helper
+          cat > "pkg/$PKG/uninstall.sh" <<'EOF'
+          #!/usr/bin/env sh
+          INSTALL_DIR="${1:-$HOME/.local}"
+          rm -f "$INSTALL_DIR/bin/sqlrelman"
+          rm -rf "$INSTALL_DIR/lib/sqlrelman"
+          echo "sqlrelman uninstalled."
+          EOF
+          chmod +x "pkg/$PKG/uninstall.sh"
+
+          cp README.md "pkg/$PKG/" 2>/dev/null || true
+
+          # Create archives
+          cd pkg
+          tar -czf "../${PKG}.tar.gz" "$PKG"
+          zip -r  "../${PKG}.zip"    "$PKG"
+          cd ..
+
+      - name: Upload Linux tar.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tar
+          path: sqlrelman-*-linux.tar.gz
+
+      - name: Upload Linux zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-zip
+          path: sqlrelman-*-linux.zip
+
+  # ──────────────────────────────────────────────────────────────
+  # 3. Package for macOS (.tar.gz + .zip)
+  # ──────────────────────────────────────────────────────────────
+  package-macos:
+    name: Package — macOS
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download fat JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: fat-jar
+          path: dist/
+
+      - name: Resolve version
+        id: ver
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble macOS package
+        run: |
+          PKG="sqlrelman-${{ steps.ver.outputs.VERSION }}-macos"
+          mkdir -p "pkg/$PKG/bin"
+
+          cp dist/sqlrelman-*.jar "pkg/$PKG/sqlrelman.jar"
+
+          cat > "pkg/$PKG/bin/sqlrelman" <<'EOF'
+          #!/usr/bin/env sh
+          SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          exec java \
+            --enable-native-access=ALL-UNNAMED \
+            -Djline.log.level=OFF \
+            -Dorg.jline.terminal.jna=false \
+            -jar "$SCRIPT_DIR/sqlrelman.jar" "$@"
+          EOF
+          chmod +x "pkg/$PKG/bin/sqlrelman"
+
+          cat > "pkg/$PKG/install.sh" <<'EOF'
+          #!/usr/bin/env sh
+          set -e
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          INSTALL_DIR="${1:-$HOME/.local}"
+          mkdir -p "$INSTALL_DIR/lib/sqlrelman" "$INSTALL_DIR/bin"
+          cp "$SCRIPT_DIR/sqlrelman.jar" "$INSTALL_DIR/lib/sqlrelman/sqlrelman.jar"
+          cat > "$INSTALL_DIR/bin/sqlrelman" <<WRAPPER
+          #!/usr/bin/env sh
+          exec java --enable-native-access=ALL-UNNAMED -Djline.log.level=OFF -Dorg.jline.terminal.jna=false -jar "$INSTALL_DIR/lib/sqlrelman/sqlrelman.jar" "\$@"
+          WRAPPER
+          chmod +x "$INSTALL_DIR/bin/sqlrelman"
+          echo "Installed sqlrelman to $INSTALL_DIR/bin/sqlrelman"
+          echo "Make sure $INSTALL_DIR/bin is on your PATH."
+          EOF
+          chmod +x "pkg/$PKG/install.sh"
+
+          cat > "pkg/$PKG/uninstall.sh" <<'EOF'
+          #!/usr/bin/env sh
+          INSTALL_DIR="${1:-$HOME/.local}"
+          rm -f "$INSTALL_DIR/bin/sqlrelman"
+          rm -rf "$INSTALL_DIR/lib/sqlrelman"
+          echo "sqlrelman uninstalled."
+          EOF
+          chmod +x "pkg/$PKG/uninstall.sh"
+
+          cp README.md "pkg/$PKG/" 2>/dev/null || true
+
+          cd pkg
+          tar -czf "../${PKG}.tar.gz" "$PKG"
+          zip -r  "../${PKG}.zip"    "$PKG"
+          cd ..
+
+      - name: Upload macOS tar.gz
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-tar
+          path: sqlrelman-*-macos.tar.gz
+
+      - name: Upload macOS zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: sqlrelman-*-macos.zip
+
+  # ──────────────────────────────────────────────────────────────
+  # 4. Package for Windows (.zip + .bat installer)
+  # ──────────────────────────────────────────────────────────────
+  package-windows:
+    name: Package — Windows
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download fat JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: fat-jar
+          path: dist/
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble Windows package
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.VERSION }}"
+          $pkg = "sqlrelman-$ver-windows"
+          New-Item -ItemType Directory -Force -Path "pkg\$pkg\bin" | Out-Null
+
+          Copy-Item (Get-Item dist\sqlrelman-*.jar) "pkg\$pkg\sqlrelman.jar"
+
+          # sqlrelman.bat wrapper
+          @'
+          @echo off
+          SET SCRIPT_DIR=%~dp0..
+          java --enable-native-access=ALL-UNNAMED ^
+               -Djline.log.level=OFF ^
+               -Dorg.jline.terminal.jna=false ^
+               -jar "%SCRIPT_DIR%\sqlrelman.jar" %*
+          '@ | Set-Content "pkg\$pkg\bin\sqlrelman.bat" -Encoding ASCII
+
+          # PowerShell wrapper (preferred on modern Windows)
+          @'
+          param([Parameter(ValueFromRemainingArguments)]$Args)
+          $jar = Join-Path $PSScriptRoot "..\sqlrelman.jar"
+          & java --enable-native-access=ALL-UNNAMED `
+                 -Djline.log.level=OFF `
+                 -Dorg.jline.terminal.jna=false `
+                 -jar $jar @Args
+          '@ | Set-Content "pkg\$pkg\bin\sqlrelman.ps1" -Encoding UTF8
+
+          # install.bat — copies to %USERPROFILE%\.local or a custom path
+          @'
+          @echo off
+          SETLOCAL
+          SET INSTALL_DIR=%USERPROFILE%\.local
+          IF NOT "%~1"=="" SET INSTALL_DIR=%~1
+
+          IF NOT EXIST "%INSTALL_DIR%\lib\sqlrelman" MKDIR "%INSTALL_DIR%\lib\sqlrelman"
+          IF NOT EXIST "%INSTALL_DIR%\bin"            MKDIR "%INSTALL_DIR%\bin"
+
+          COPY /Y "%~dp0sqlrelman.jar" "%INSTALL_DIR%\lib\sqlrelman\sqlrelman.jar"
+
+          (
+            ECHO @echo off
+            ECHO java --enable-native-access=ALL-UNNAMED -Djline.log.level=OFF -Dorg.jline.terminal.jna=false -jar "%INSTALL_DIR%\lib\sqlrelman\sqlrelman.jar" %%*
+          ) > "%INSTALL_DIR%\bin\sqlrelman.bat"
+
+          ECHO.
+          ECHO Installed to %INSTALL_DIR%\bin\sqlrelman.bat
+          ECHO Add %INSTALL_DIR%\bin to your PATH if it is not already there.
+          ENDLOCAL
+          '@ | Set-Content "pkg\$pkg\install.bat" -Encoding ASCII
+
+          # uninstall.bat
+          @'
+          @echo off
+          SETLOCAL
+          SET INSTALL_DIR=%USERPROFILE%\.local
+          IF NOT "%~1"=="" SET INSTALL_DIR=%~1
+
+          DEL /Q "%INSTALL_DIR%\bin\sqlrelman.bat" 2>NUL
+          RMDIR /S /Q "%INSTALL_DIR%\lib\sqlrelman" 2>NUL
+          ECHO sqlrelman uninstalled from %INSTALL_DIR%
+          ENDLOCAL
+          '@ | Set-Content "pkg\$pkg\uninstall.bat" -Encoding ASCII
+
+          if (Test-Path README.md) { Copy-Item README.md "pkg\$pkg\" }
+
+          Compress-Archive -Path "pkg\$pkg" -DestinationPath "$pkg.zip" -Force
+
+      - name: Upload Windows zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: sqlrelman-*-windows.zip
+
+  # ──────────────────────────────────────────────────────────────
+  # 5. Create the GitHub Release and attach all assets
+  # ──────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [package-linux, package-macos, package-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download all packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+          pattern: '{linux-tar,linux-zip,macos-tar,macos-zip,windows-zip,fat-jar}'
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SQLRelMan ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## SQLRelMan ${{ github.ref_name }}
+
+            ### Downloads
+
+            | Platform | Archive | Notes |
+            |----------|---------|-------|
+            | 🐧 Linux   | `sqlrelman-*-linux.tar.gz` / `.zip` | Requires Java 17+ |
+            | 🍎 macOS   | `sqlrelman-*-macos.tar.gz` / `.zip` | Requires Java 17+ |
+            | 🪟 Windows | `sqlrelman-*-windows.zip`           | Requires Java 17+ |
+            | ☕ Any OS  | `sqlrelman-*.jar`                   | Raw fat JAR       |
+
+            ### Quick Install
+
+            **Linux / macOS**
+            ```sh
+            tar -xzf sqlrelman-*-linux.tar.gz   # or -macos.tar.gz
+            cd sqlrelman-*/
+            ./install.sh                          # installs to ~/.local/bin
+            ```
+
+            **Windows** — extract the zip, then run `install.bat` (or double-click it).
+
+            **Any platform (fat JAR)**
+            ```sh
+            java -jar sqlrelman-*.jar
+            ```
+
+            ### Requirements
+            - Java 17 or newer (`java -version`)
+          files: release-assets/*
