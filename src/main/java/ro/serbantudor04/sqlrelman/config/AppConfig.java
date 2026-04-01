@@ -17,35 +17,43 @@ public class AppConfig {
 
     @ConfigProperty(
             key = "releases.dir",
-            description = "The directory where new SQL release files are generated",
+            description = "The directory where SQL release directories are stored",
             defaultValue = "./releases"
     )
     public String releasesDirectory;
 
     @ConfigProperty(
+            key = "db.type",
+            description = "Database type (mysql, postgresql, mariadb, sqlserver, oracle, sqlite, h2)",
+            defaultValue = ""
+    )
+    public String dbType;
+
+    // dbDriver is now derived from dbType at runtime; kept for manual overrides.
+    @ConfigProperty(
             key = "db.driver",
-            description = "JDBC Driver class (e.g., com.mysql.cj.jdbc.Driver, org.postgresql.Driver)",
+            description = "JDBC Driver class override (leave blank to use the default for your db.type)",
             defaultValue = ""
     )
     public String dbDriver;
 
     @ConfigProperty(
             key = "db.url",
-            description = "JDBC URL (e.g., jdbc:mysql://localhost:3306/mydb)",
+            description = "JDBC URL (e.g., jdbc:postgresql://localhost:5432/mydb)",
             defaultValue = ""
     )
     public String dbUrl;
 
     @ConfigProperty(
             key = "db.user",
-            description = "Database Username",
+            description = "Database username",
             defaultValue = ""
     )
     public String dbUser;
 
     @ConfigProperty(
             key = "db.password",
-            description = "Database Password",
+            description = "Database password",
             defaultValue = ""
     )
     public String dbPassword;
